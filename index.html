@@ -226,7 +226,7 @@
 
         <div class="track-meta">
             <div class="track-info">
-                <h2 id="songTitle">गाना लोड हो रहा है...</h2>
+                <h2 id="songTitle">गाने सर्च करें</h2>
                 <p id="artistTitle">AR Tunes Engine</p>
             </div>
             <button class="like-btn" id="favBtn" onclick="toggleFavorite()"><i class="fas fa-heart"></i></button>
@@ -313,9 +313,8 @@
 
         window.addEventListener('DOMContentLoaded', () => {
             setupEvents();
-            // App start search
             setTimeout(() => {
-                callNativeSearch('Sapna Choudhary', false);
+                callNativeSearch('Haryanvi', false);
             }, 300);
         });
 
@@ -330,7 +329,7 @@
             }
         }
 
-        // Bridge se aane wala data
+        // Bridge se data receive karne ka function
         window.onSongsLoaded = function(b64) {
             const list = document.getElementById('searchList');
             try {
