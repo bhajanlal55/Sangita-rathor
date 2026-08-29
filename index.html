@@ -1,1 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AR Tunes</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #00d26a;
+      --bg: #0f111a;
+      --card-bg: #1a1d2e;
+      --text-main: #ffffff;
+      --text-sub: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+    body { background-color: var(--bg); color: var(--text-main); padding-bottom: 90px; }
+    header {
+      padding: 16px;
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+    .brand { font-size: 20px; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+    .search-bar {
+      display: flex;
+      background: var(--card-bg);
+      border-radius: 25px;
+      padding: 6px 16px;
+      align-items: center;
+      border: 1px solid #2d3748;
+    }
+    .search-bar input {
+      border: none;
+      background: transparent;
+      outline: none;
+      color: #fff;
+      flex: 1;
+      font-size: 15px;
+      padding: 6px;
+    }
+    .search-bar button {
+      background: transparent;
+      border: none;
+      color: var(--primary);
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .container { padding: 16px; }
+    .song-list { display: flex; flex-direction: column; gap: 10px; }
+    .song-item {
+      display: flex;
+      align-items: center;
+      background: var(--card-bg);
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      gap: 12px;
+    }
+    .song-img {
+      width: 48px;
+      height: 48px;
+      border-radius: 8px;
+      object-fit: cover;
+      background-color: #2a2e45;
+    }
+    .song-info { flex: 1; overflow: hidden; }
+    .song-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .song-artist { font-size: 12px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .play-btn-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(0, 210, 106, 0.15);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+    }
+    .player-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 75px;
+      background: #141724;
+      border-top: 1px solid #23273a;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+      z-index: 1000;
+    }
+    .player-img { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; }
+    .player-info { flex: 1; overflow: hidden; }
+    .player-title { font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .player-artist { font-size: 11px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .player-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: var(--primary);
+      border: none;
+      color: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .status-msg { text-align: center; color: var(--text-sub); font-size: 14px; margin-top: 30px; }
+  </style>
+</head>
+<body>
 
+  <header>
+    <div class="brand"><i class="fas fa-headphones-alt"></i> AR Tunes HD</div>
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="Search Sidhu, Sapna, Bollywood..." />
+      <button onclick="searchMusic()"><i class="fas fa-search"></i></button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div id="statusMsg" class="status-msg">Type a song name above to listen</div>
+    <div class="song-list" id="songList"></div>
+  </div>
+
+  <div class="player-bar" id="playerBar" style="display: none;">
+    <img id="trackImg" class="player-img" src="" />
+    <div class="player-info">
+      <div class="player-title" id="trackTitle">Song Name</div>
+      <div class="player-artist" id="trackArtist">Artist</div>
+    </div>
+    <button class="player-btn" onclick="togglePlay()"><i id="playIcon" class="fas fa-play"></i></button>
+  </div>
+
+  <audio id="audioElement"></audio>
+
+  <script>
+    const API_BASE = "https://jiosaavn-api-tau-three.vercel.app";
+    const audio = document.getElementById("audioElement");
+    let isPlaying = false;
+
+    document.getElementById("searchInput").addEventListener("keypress", (e) => {
+      if (e.key === "Enter") searchMusic();
+    });
+
+    async function searchMusic() {
+      const q = document.getElementById("searchInput").value.trim();
+      if (!q) return;
+
+      const msg = document.getElementById("statusMsg");
+      const list = document.getElementById("songList");
+      msg.style.display = "block";
+      msg.innerText = "Searching songs...";
+      list.innerHTML = "";
+
+      try {
+        const res = await fetch(`${API_BASE}/search?query=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        
+        let songs = [];
+        if (Array.isArray(data)) {
+          songs = data;
+        } else if (data.result && Array.isArray(data.result)) {
+          songs = data.result;
+        } else if (data.results && Array.isArray(data.results)) {
+          songs = data.results;
+        }
+
+        if (!songs || songs.length === 0) {
+          msg.innerText = "No songs found.";
+          return;
+        }
+
+        msg.style.display = "none";
+        songs.forEach(item => {
+          let streamUrl = "";
+          if (item.media_url) streamUrl = item.media_url;
+          else if (item.url) streamUrl = item.url;
+          else if (item.download_url && Array.isArray(item.download_url)) {
+            const best = item.download_url[item.download_url.length - 1];
+            streamUrl = typeof best === 'string' ? best : (best.url || best.link || '');
+          }
+
+          if (streamUrl) {
+            const div = document.createElement("div");
+            div.className = "song-item";
+            const img = item.image ? (typeof item.image === 'string' ? item.image : (item.image[item.image.length - 1].url || '')) : '';
+            
+            div.innerHTML = `
+              <img src="${img || 'https://via.placeholder.com/150'}" class="song-img" />
+              <div class="song-info">
+                <div class="song-title">${item.song || item.name || item.title || 'Unknown Song'}</div>
+                <div class="song-artist">${item.singers || item.primary_artists || item.artist || 'JioSaavn'}</div>
+              </div>
+              <div class="play-btn-circle"><i class="fas fa-play"></i></div>
+            `;
+            div.onclick = () => playAudio(streamUrl, item.song || item.name || item.title, item.singers || item.primary_artists || item.artist, img);
+            list.appendChild(div);
+          }
+        });
+      } catch (err) {
+        msg.innerText = "Error loading songs. Please try again.";
+      }
+    }
+
+    function playAudio(url, title, artist, img) {
+      audio.src = url;
+      audio.play();
+      isPlaying = true;
+      document.getElementById("playerBar").style.display = "flex";
+      document.getElementById("trackTitle").innerText = title || "Song";
+      document.getElementById("trackArtist").innerText = artist || "Artist";
+      document.getElementById("trackImg").src = img || "";
+      document.getElementById("playIcon").className = "fas fa-pause";
+    }
+
+    function togglePlay() {
+      if (isPlaying) {
+        audio.pause();
+        document.getElementById("playIcon").className = "fas fa-play";
+      } else {
+        audio.play();
+        document.getElementById("playIcon").className = "fas fa-pause";
+      }
+      isPlaying = !isPlaying;
+    }
+
+    audio.onended = () => {
+      isPlaying = false;
+      document.getElementById("playIcon").className = "fas fa-play";
+    };
+  </script>
+</body>
+</html>
