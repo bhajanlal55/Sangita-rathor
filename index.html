@@ -226,8 +226,8 @@
 
         <div class="track-meta">
             <div class="track-info">
-                <h2 id="songTitle">52 Gaj Ka Daman</h2>
-                <p id="artistTitle">Renuka Panwar</p>
+                <h2 id="songTitle">गाना लोड हो रहा है...</h2>
+                <p id="artistTitle">AR Tunes Engine</p>
             </div>
             <button class="like-btn" id="favBtn" onclick="toggleFavorite()"><i class="fas fa-heart"></i></button>
         </div>
@@ -263,7 +263,7 @@
     <div class="full-overlay" id="searchModal">
         <div class="search-bar-wrap">
             <button class="icon-btn" onclick="openSearch(false)"><i class="fas fa-chevron-left"></i></button>
-            <input id="searchInput" placeholder="गाना या कलाकार का नाम लिखें...">
+            <input id="searchInput" placeholder="Search Hindi, Punjabi, Haryanvi...">
             <i class="fas fa-search" style="color:var(--paper-dim)"></i>
         </div>
         <div class="results-list" id="searchList"></div>
@@ -290,10 +290,10 @@
         let favs = JSON.parse(localStorage.getItem('artunes_favs')) || [];
         let debounceTimer;
 
-        // CryptoJS Key for Direct Saavn Decrypt
+        // CryptoJS Key for Saavn Decryption
         const SAAVN_SECRET_KEY = CryptoJS.enc.Utf8.parse('38346591');
 
-        function decryptDirect(enc) {
+        function decryptUrl(enc) {
             if (!enc) return '';
             try {
                 const dec = CryptoJS.DES.decrypt(
@@ -330,66 +330,64 @@
 
         window.addEventListener('DOMContentLoaded', () => {
             setupEvents();
-            executeSearch('52 Gaj Ka Daman', false);
+            executeNativeSearch('Punjabi Hits', false);
         });
 
-        // 3-Layer Fail-Proof Multi-Mirror Search
-        async function executeSearch(query, openOverlayOnSuccess = true) {
+        // 100% Guaranteed JSONP Engine (Zero CORS Issues)
+        function executeNativeSearch(query, openOverlay = true) {
             const list = document.getElementById('searchList');
-            if (openOverlayOnSuccess) {
+            if (openOverlay) {
                 list.innerHTML = '<p style="color:#fff; text-align:center; padding:30px;">सर्च हो रहा है...</p>';
             }
 
-            let items = [];
+            const cbName = 'saavn_jsonp_' + Math.floor(Math.random() * 100000);
+            
+            window[cbName] = function(data) {
+                delete window[cbName];
+                const sEl = document.getElementById(cbName);
+                if (sEl) sEl.remove();
 
-            // Mirror 1: Global Saavn Gateway
-            try {
-                const r1 = await fetch(`https://jiosaavn-api-private-sigma.vercel.app/api/search/songs?query=${encodeURIComponent(query)}`);
-                const j1 = await r1.json();
-                if (j1.data && j1.data.results) {
-                    items = j1.data.results.map(s => ({
-                        id: s.id,
-                        name: s.name,
-                        artist: s.artists?.primary?.map(a => a.name).join(', ') || 'Artist',
-                        image: s.image?.[s.image.length - 1]?.url || 'https://placehold.co/500',
-                        url: s.downloadUrl?.[s.downloadUrl.length - 1]?.url || ''
-                    })).filter(s => s.url);
+                let results = data.results || data.data?.results || [];
+                let items = results.map(item => {
+                    let info = item.more_info || {};
+                    let enc = info.encrypted_media_url || item.encrypted_media_url || '';
+                    let audioUrl = decryptUrl(enc);
+                    if (!audioUrl && info.media_preview_url) {
+                        audioUrl = info.media_preview_url.replace('preview.saavncdn.com', 'aac.saavncdn.com').replace('_96_p.mp4', '_320.mp4');
+                    }
+                    let img = item.image ? item.image.replace('150x150', '500x500') : 'https://placehold.co/500';
+                    let artist = info.primary_artists || item.singers || info.singers || 'Artist';
+
+                    return {
+                        id: String(item.id),
+                        name: (item.song || item.title || 'Song').replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&'),
+                        artist: artist.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&'),
+                        image: img,
+                        url: audioUrl
+                    };
+                }).filter(s => s.url !== '');
+
+                if (items.length > 0) {
+                    renderList(items, list, true);
+                    if (playlist.length === 0) {
+                        playlist = items;
+                        curIdx = 0;
+                        loadTrack(playlist[0], false);
+                    }
+                } else if (openOverlay) {
+                    list.innerHTML = '<p style="color:#ff5252; text-align:center; padding:30px;">कोई गाना नहीं मिला!</p>';
                 }
-            } catch (e) {}
+            };
 
-            // Mirror 2: Direct Saavn Proxy Engine
-            if (items.length === 0) {
-                try {
-                    const r2 = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent('https://www.jiosaavn.com/api.php?__call=search.getSongResults&_format=json&_marker=0&api_version=4&p=1&n=30&q=' + query)}`);
-                    const j2 = await r2.json();
-                    let results = j2.results || j2.data?.results || [];
-                    items = results.map(item => {
-                        let info = item.more_info || {};
-                        let dl = decryptDirect(info.encrypted_media_url || item.encrypted_media_url);
-                        if (!dl && info.media_preview_url) {
-                            dl = info.media_preview_url.replace('preview.saavncdn.com', 'aac.saavncdn.com').replace('_96_p.mp4', '_320.mp4');
-                        }
-                        return {
-                            id: String(item.id),
-                            name: (item.song || item.title || '').replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&'),
-                            artist: (info.primary_artists || item.singers || 'Artist').replace(/&quot;/g, '"'),
-                            image: item.image ? item.image.replace('150x150', '500x500') : 'https://placehold.co/500',
-                            url: dl
-                        };
-                    }).filter(s => s.url);
-                } catch (e) {}
-            }
-
-            if (items.length > 0) {
-                renderList(items, list, true);
-                if (playlist.length === 0) {
-                    playlist = items;
-                    curIdx = 0;
-                    loadTrack(playlist[0], false);
+            const script = document.createElement('script');
+            script.id = cbName;
+            script.src = `https://www.jiosaavn.com/api.php?__call=search.getSongResults&_format=json&_marker=0&api_version=4&p=1&n=40&q=${encodeURIComponent(query)}&_callback=${cbName}&callback=${cbName}`;
+            script.onerror = function() {
+                if (openOverlay) {
+                    list.innerHTML = '<p style="color:#ff5252; text-align:center; padding:30px;">सर्च एरर! दोबारा प्रयास करें।</p>';
                 }
-            } else if (openOverlayOnSuccess) {
-                list.innerHTML = '<p style="color:#ff5252; text-align:center; padding:30px;">कोई गाना नहीं मिला, स्पेलिंग चेक करें!</p>';
-            }
+            };
+            document.body.appendChild(script);
         }
 
         function renderList(songs, container, isSearch) {
@@ -502,7 +500,7 @@
                 clearTimeout(debounceTimer);
                 const q = e.target.value.trim();
                 if (!q) return;
-                debounceTimer = setTimeout(() => executeSearch(q, true), 400);
+                debounceTimer = setTimeout(() => executeNativeSearch(q, true), 350);
             });
         }
 
