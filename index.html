@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AR Tunes</title>
+  <title>AR Tunes HD</title>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
   <style>
     :root {
@@ -122,7 +122,7 @@
   <header>
     <div class="brand"><i class="fas fa-headphones-alt"></i> AR Tunes HD</div>
     <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="Search Sidhu, Sapna, Bollywood..." />
+      <input type="text" id="searchInput" placeholder="Search Sidhu Moose Wala, Karan Aujla..." />
       <button onclick="searchMusic()"><i class="fas fa-search"></i></button>
     </div>
   </header>
@@ -163,7 +163,11 @@
       list.innerHTML = "";
 
       try {
-        const res = await fetch(`${API_BASE}/search?query=${encodeURIComponent(q)}`);
+        // इस API रेपो में /song/?query= एंडपॉइंट इस्तेमाल होता है
+        let res = await fetch(`${API_BASE}/song/?query=${encodeURIComponent(q)}`);
+        if (!res.ok) {
+          res = await fetch(`${API_BASE}/search?query=${encodeURIComponent(q)}`);
+        }
         const data = await res.json();
         
         let songs = [];
@@ -173,37 +177,52 @@
           songs = data.result;
         } else if (data.results && Array.isArray(data.results)) {
           songs = data.results;
+        } else if (data.data && Array.isArray(data.data.results)) {
+          songs = data.data.results;
+        } else if (typeof data === 'object' && data !== null) {
+          songs = [data];
         }
 
-        if (!songs || songs.length === 0) {
+        if (!songs || songs.length === 0 || !songs[0].song && !songs[0].media_url && !songs[0].download_url) {
           msg.innerText = "No songs found.";
           return;
         }
 
         msg.style.display = "none";
         songs.forEach(item => {
-          let streamUrl = "";
-          if (item.media_url) streamUrl = item.media_url;
-          else if (item.url) streamUrl = item.url;
-          else if (item.download_url && Array.isArray(item.download_url)) {
-            const best = item.download_url[item.download_url.length - 1];
-            streamUrl = typeof best === 'string' ? best : (best.url || best.link || '');
+          let streamUrl = item.media_url || item.url || item.media_preview_url || "";
+          
+          if (!streamUrl && item.download_url) {
+            if (Array.isArray(item.download_url)) {
+              const best = item.download_url[item.download_url.length - 1];
+              streamUrl = typeof best === 'string' ? best : (best.url || best.link || '');
+            } else if (typeof item.download_url === 'string') {
+              streamUrl = item.download_url;
+            }
           }
 
           if (streamUrl) {
             const div = document.createElement("div");
             div.className = "song-item";
-            const img = item.image ? (typeof item.image === 'string' ? item.image : (item.image[item.image.length - 1].url || '')) : '';
             
+            let img = item.image || item.album_art || item.thumbnail || "";
+            if (Array.isArray(img) && img.length > 0) {
+              const lastImg = img[img.length - 1];
+              img = typeof lastImg === 'string' ? lastImg : (lastImg.url || lastImg.link || '');
+            }
+            
+            const title = item.song || item.name || item.title || 'Unknown Song';
+            const artist = item.singers || item.primary_artists || item.artist || item.singers_name || 'JioSaavn';
+
             div.innerHTML = `
               <img src="${img || 'https://via.placeholder.com/150'}" class="song-img" />
               <div class="song-info">
-                <div class="song-title">${item.song || item.name || item.title || 'Unknown Song'}</div>
-                <div class="song-artist">${item.singers || item.primary_artists || item.artist || 'JioSaavn'}</div>
+                <div class="song-title">${title}</div>
+                <div class="song-artist">${artist}</div>
               </div>
               <div class="play-btn-circle"><i class="fas fa-play"></i></div>
             `;
-            div.onclick = () => playAudio(streamUrl, item.song || item.name || item.title, item.singers || item.primary_artists || item.artist, img);
+            div.onclick = () => playAudio(streamUrl, title, artist, img);
             list.appendChild(div);
           }
         });
