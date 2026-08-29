@@ -1,1 +1,530 @@
 
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AR Tunes</title>
+    <!-- Font Awesome & Fonts -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+
+    <style>
+        :root {
+            --neon-pink: #ff007f;
+            --neon-purple: #b026ff;
+            --neon-cyan: #00f0ff;
+            --paper: #ffffff;
+            --paper-dim: rgba(255, 255, 255, 0.85);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            background: #000;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .app-shell {
+            width: 100%;
+            height: 100vh;
+            background: linear-gradient(135deg, var(--neon-pink) 0%, var(--neon-purple) 45%, var(--neon-cyan) 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 42px 20px 24px 20px;
+        }
+
+        .app-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 40px;
+        }
+
+        .header-title-block { text-align: center; flex: 1; }
+        .app-header h3 { font-size: 11px; color: var(--paper-dim); font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; }
+        .app-header p { font-size: 13px; color: var(--paper); font-weight: 700; }
+
+        .icon-btn {
+            background: transparent;
+            border: none;
+            color: var(--paper);
+            font-size: 20px;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .poster-box {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 8px 0;
+        }
+
+        .poster-wrapper {
+            width: 68vw;
+            max-width: 260px;
+            aspect-ratio: 1/1;
+            position: relative;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.45);
+        }
+
+        .main-poster { width: 100%; height: 100%; object-fit: cover; }
+
+        .buffering-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            font-size: 32px;
+        }
+
+        .poster-wrapper.buffering .buffering-overlay { display: flex; }
+
+        .track-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .track-info { flex: 1; overflow: hidden; padding-right: 10px; }
+        .track-info h2 { font-size: 18px; font-weight: 800; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .track-info p { font-size: 13px; color: var(--paper-dim); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .like-btn { background: transparent; border: none; color: #fff; font-size: 22px; cursor: pointer; }
+        .like-btn.liked { color: #ff1744; }
+
+        .slider-wrap { width: 100%; margin: 4px 0; }
+        .custom-slider { width: 100%; height: 5px; -webkit-appearance: none; background: rgba(255,255,255,0.35); border-radius: 3px; outline: none; }
+        .custom-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%; background: #fff; }
+
+        .time-box { display: flex; justify-content: space-between; font-size: 11px; color: var(--paper-dim); font-weight: 600; margin-top: 4px; }
+
+        .bass-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.16);
+            padding: 8px 14px;
+            border-radius: 12px;
+            margin: 4px 0;
+        }
+        .bass-box label { font-size: 10px; font-weight: 800; color: #fff; }
+
+        .controls-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+        }
+
+        .play-globe {
+            width: 62px;
+            height: 62px;
+            border-radius: 50%;
+            background: #fff;
+            color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 22px;
+            cursor: pointer;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+        }
+
+        .dock-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 10px;
+        }
+
+        .full-overlay {
+            position: fixed;
+            inset: 0;
+            background: #0d0414;
+            z-index: 999;
+            padding: 42px 16px 16px 16px;
+            display: none;
+            flex-direction: column;
+        }
+
+        .search-bar-wrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255,255,255,0.1);
+            padding: 10px 14px;
+            border-radius: 12px;
+            margin-bottom: 14px;
+        }
+
+        .search-bar-wrap input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #fff;
+            font-size: 15px;
+            flex: 1;
+        }
+
+        .results-list { flex: 1; overflow-y: auto; }
+        .song-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(255,255,255,0.06);
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            cursor: pointer;
+        }
+        .song-item img { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; }
+        .song-titles { flex: 1; overflow: hidden; }
+        .song-titles h4 { font-size: 14px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .song-titles p { font-size: 12px; color: var(--paper-dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    </style>
+</head>
+<body>
+
+    <div class="app-shell">
+        <div class="app-header">
+            <button class="icon-btn" onclick="openSearch(true)"><i class="fas fa-search"></i></button>
+            <div class="header-title-block">
+                <h3>PLAYING FROM INTEREST</h3>
+                <p>AR Tunes • Sangita Rathore</p>
+            </div>
+            <button class="icon-btn" onclick="openLibrary(true)"><i class="fas fa-heart" style="color:#ff1744;"></i></button>
+        </div>
+
+        <div class="poster-box">
+            <div class="poster-wrapper" id="posterWrap">
+                <div class="buffering-overlay"><i class="fas fa-circle-notch fa-spin"></i></div>
+                <img id="trackPoster" class="main-poster" src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=500">
+            </div>
+        </div>
+
+        <div class="track-meta">
+            <div class="track-info">
+                <h2 id="songTitle">गाना लोड हो रहा है...</h2>
+                <p id="artistTitle">AR Tunes Engine</p>
+            </div>
+            <button class="like-btn" id="favBtn" onclick="toggleFavorite()"><i class="fas fa-heart"></i></button>
+        </div>
+
+        <div class="slider-wrap">
+            <input id="timeline" class="custom-slider" max="100" min="0" type="range" value="0">
+            <div class="time-box">
+                <span id="curTime">0:00</span>
+                <span id="totTime">0:00</span>
+            </div>
+        </div>
+
+        <div class="bass-box">
+            <label><i class="fas fa-bolt"></i> BASS</label>
+            <input class="custom-slider" max="25" min="0" type="range" value="8" oninput="changeBass(this.value)">
+        </div>
+
+        <div class="controls-row">
+            <button class="icon-btn" id="shufBtn" onclick="toggleShuf()"><i class="fas fa-random"></i></button>
+            <button class="icon-btn" onclick="prevSong()"><i class="fas fa-step-backward"></i></button>
+            <div class="play-globe" onclick="toggleAudio()"><i id="playIcon" class="fas fa-play"></i></div>
+            <button class="icon-btn" onclick="nextSong()"><i class="fas fa-step-forward"></i></button>
+            <button class="icon-btn" id="repBtn" onclick="toggleRep()"><i class="fas fa-redo"></i></button>
+        </div>
+
+        <div class="dock-row">
+            <button class="icon-btn" onclick="openSearch(true)"><i class="fas fa-search"></i></button>
+            <button class="icon-btn" onclick="openLibrary(true)"><i class="fas fa-list-ul"></i></button>
+        </div>
+    </div>
+
+    <!-- Search Overlay -->
+    <div class="full-overlay" id="searchModal">
+        <div class="search-bar-wrap">
+            <button class="icon-btn" onclick="openSearch(false)"><i class="fas fa-chevron-left"></i></button>
+            <input id="searchInput" placeholder="गाना या गायक का नाम लिखें...">
+            <i class="fas fa-search" style="color:var(--paper-dim)"></i>
+        </div>
+        <div class="results-list" id="searchList"></div>
+    </div>
+
+    <!-- Library Overlay -->
+    <div class="full-overlay" id="libraryModal">
+        <div class="search-bar-wrap">
+            <button class="icon-btn" onclick="openLibrary(false)"><i class="fas fa-chevron-left"></i></button>
+            <span style="color:#fff; font-weight:700; margin-left:10px;">Your Liked Songs</span>
+        </div>
+        <div class="results-list" id="libraryList"></div>
+    </div>
+
+    <audio id="playerAudio" playsinline preload="auto"></audio>
+
+    <script>
+        const audio = document.getElementById('playerAudio');
+        let playlist = [];
+        let curIdx = 0;
+        let isShuf = false;
+        let isRep = false;
+        let seeking = false;
+        let favs = JSON.parse(localStorage.getItem('artunes_favs')) || [];
+        let debounceTimer;
+
+        // Decryption Key
+        const SAAVN_SECRET_KEY = CryptoJS.enc.Utf8.parse('38346591');
+
+        function decryptDirect(enc) {
+            if (!enc) return '';
+            try {
+                const dec = CryptoJS.DES.decrypt(
+                    { ciphertext: CryptoJS.enc.Base64.parse(enc) },
+                    SAAVN_SECRET_KEY,
+                    { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }
+                );
+                let direct = dec.toString(CryptoJS.enc.Utf8);
+                if (direct && direct.startsWith('http')) return direct.replace('_96.mp4', '_320.mp4');
+            } catch (e) {}
+            return '';
+        }
+
+        // Web Audio Bass Booster
+        let ctx, bass, srcNode;
+        function initBass() {
+            if (ctx) return;
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                ctx = new AudioContext();
+                srcNode = ctx.createMediaElementSource(audio);
+                bass = ctx.createBiquadFilter();
+                bass.type = "lowshelf";
+                bass.frequency.value = 220;
+                bass.gain.value = 8;
+                srcNode.connect(bass);
+                bass.connect(ctx.destination);
+            } catch (e) {}
+        }
+
+        function changeBass(v) {
+            if (bass) bass.gain.value = parseFloat(v);
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            setupEvents();
+            runDirectSearch('Sidhu Moose Wala', false);
+        });
+
+        // 100% Direct Autocomplete Engine (Never Blocked by CORS)
+        function runDirectSearch(query, openOverlay = true) {
+            const list = document.getElementById('searchList');
+            if (openOverlay) {
+                list.innerHTML = '<p style="color:#fff; text-align:center; padding:30px;"><i class="fas fa-spinner fa-spin"></i> सर्च हो रहा है...</p>';
+            }
+
+            const cbName = 'jiosaavn_cb_' + Date.now();
+            window[cbName] = function(data) {
+                delete window[cbName];
+                const sEl = document.getElementById(cbName);
+                if (sEl) sEl.remove();
+
+                let songs = (data.songs && data.songs.data) ? data.songs.data : [];
+                let items = songs.map(s => {
+                    let dl = decryptDirect(s.more_info?.encrypted_media_url || s.encrypted_media_url);
+                    if (!dl && s.more_info?.media_preview_url) {
+                        dl = s.more_info.media_preview_url.replace('preview.saavncdn.com', 'aac.saavncdn.com').replace('_96_p.mp4', '_320.mp4');
+                    }
+                    return {
+                        id: s.id,
+                        name: (s.title || s.song || '').replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&'),
+                        artist: (s.more_info?.primary_artists || s.description || 'Artist').replace(/&quot;/g, '"'),
+                        image: s.image ? s.image.replace('50x50', '500x500').replace('150x150', '500x500') : 'https://placehold.co/500',
+                        url: dl
+                    };
+                }).filter(s => s.url !== '');
+
+                if (items.length > 0) {
+                    renderList(items, list, true);
+                    if (playlist.length === 0) {
+                        playlist = items;
+                        curIdx = 0;
+                        loadTrack(playlist[0], false);
+                    }
+                } else if (openOverlay) {
+                    list.innerHTML = '<p style="color:#ff5252; text-align:center; padding:30px;">कोई गाना नहीं मिला!</p>';
+                }
+            };
+
+            const script = document.createElement('script');
+            script.id = cbName;
+            script.src = `https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&cc=in&includeMetaTags=1&query=${encodeURIComponent(query)}&ctx=web6dot0&callback=${cbName}`;
+            document.body.appendChild(script);
+        }
+
+        function renderList(songs, container, isSearch) {
+            container.innerHTML = '';
+            songs.forEach(song => {
+                const el = document.createElement('div');
+                el.className = 'song-item';
+                el.onclick = () => {
+                    playlist = songs;
+                    curIdx = songs.findIndex(x => x.id === song.id);
+                    loadTrack(song, true);
+                    if (isSearch) openSearch(false);
+                    else openLibrary(false);
+                };
+                el.innerHTML = `
+                    <img src="${song.image}">
+                    <div class="song-titles">
+                        <h4>${song.name}</h4>
+                        <p>${song.artist}</p>
+                    </div>
+                    <i class="fas fa-play-circle" style="color:#fff; font-size:20px;"></i>
+                `;
+                container.appendChild(el);
+            });
+        }
+
+        function loadTrack(track, autoplay) {
+            if (!track || !track.url) return;
+            document.getElementById('posterWrap').classList.add('buffering');
+            audio.src = track.url;
+            document.getElementById('songTitle').innerText = track.name;
+            document.getElementById('artistTitle').innerText = track.artist;
+            document.getElementById('trackPoster').src = track.image;
+            updateHeart(track.id);
+
+            if (autoplay) {
+                initBass();
+                if (ctx && ctx.state === 'suspended') ctx.resume();
+                audio.play().then(() => setPlayIcon(true)).catch(() => setPlayIcon(false));
+            }
+        }
+
+        function toggleAudio() {
+            if (!audio.src) return;
+            initBass();
+            if (ctx && ctx.state === 'suspended') ctx.resume();
+
+            if (audio.paused) {
+                audio.play().then(() => setPlayIcon(true)).catch(() => {});
+            } else {
+                audio.pause();
+                setPlayIcon(false);
+            }
+        }
+
+        function setPlayIcon(play) {
+            document.getElementById('playIcon').className = play ? "fas fa-pause" : "fas fa-play";
+        }
+
+        function nextSong() {
+            if (!playlist.length) return;
+            curIdx = isShuf ? Math.floor(Math.random() * playlist.length) : (curIdx + 1) % playlist.length;
+            loadTrack(playlist[curIdx], true);
+        }
+
+        function prevSong() {
+            if (!playlist.length) return;
+            curIdx = (curIdx - 1 + playlist.length) % playlist.length;
+            loadTrack(playlist[curIdx], true);
+        }
+
+        function toggleShuf() {
+            isShuf = !isShuf;
+            document.getElementById('shufBtn').style.color = isShuf ? "#00f0ff" : "#fff";
+        }
+
+        function toggleRep() {
+            isRep = !isRep;
+            document.getElementById('repBtn').style.color = isRep ? "#00f0ff" : "#fff";
+        }
+
+        function setupEvents() {
+            const tl = document.getElementById('timeline');
+            tl.addEventListener('input', () => { seeking = true; });
+            tl.addEventListener('change', (e) => {
+                seeking = false;
+                if (audio.duration) audio.currentTime = (e.target.value / 100) * audio.duration;
+            });
+
+            audio.addEventListener('playing', () => {
+                document.getElementById('posterWrap').classList.remove('buffering');
+                setPlayIcon(true);
+            });
+            audio.addEventListener('waiting', () => {
+                document.getElementById('posterWrap').classList.add('buffering');
+            });
+            audio.addEventListener('timeupdate', () => {
+                if (audio.duration) {
+                    if (!seeking) tl.value = (audio.currentTime / audio.duration) * 100;
+                    document.getElementById('curTime').innerText = fmt(audio.currentTime);
+                    document.getElementById('totTime').innerText = fmt(audio.duration);
+                }
+            });
+            audio.addEventListener('ended', () => {
+                if (isRep) { audio.currentTime = 0; audio.play(); }
+                else nextSong();
+            });
+
+            document.getElementById('searchInput').addEventListener('input', (e) => {
+                clearTimeout(debounceTimer);
+                const q = e.target.value.trim();
+                if (!q) return;
+                debounceTimer = setTimeout(() => runDirectSearch(q, true), 300);
+            });
+        }
+
+        function fmt(s) {
+            if (isNaN(s)) return '0:00';
+            const m = Math.floor(s / 60);
+            const sec = Math.floor(s % 60);
+            return `${m}:${sec < 10 ? '0' : ''}${sec}`;
+        }
+
+        function openSearch(open) {
+            document.getElementById('searchModal').style.display = open ? 'flex' : 'none';
+            if (open) document.getElementById('searchInput').focus();
+        }
+
+        function openLibrary(open) {
+            document.getElementById('libraryModal').style.display = open ? 'flex' : 'none';
+            if (open) renderList(favs, document.getElementById('libraryList'), false);
+        }
+
+        function toggleFavorite() {
+            const track = playlist[curIdx];
+            if (!track) return;
+            const idx = favs.findIndex(f => f.id === track.id);
+            if (idx > -1) favs.splice(idx, 1);
+            else favs.unshift(track);
+            localStorage.setItem('artunes_favs', JSON.stringify(favs));
+            updateHeart(track.id);
+        }
+
+        function updateHeart(id) {
+            const isFav = favs.some(f => f.id === id);
+            document.getElementById('favBtn').classList.toggle('liked', isFav);
+        }
+    </script>
+</body>
+</html>
