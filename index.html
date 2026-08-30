@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AR Tunes HD - Pro</title>
+  <title>AR Tunes HD 100X</title>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
   <style>
     :root {
@@ -52,7 +52,8 @@
       cursor: pointer;
     }
     .count-badge {
-      font-size: 12px;
+      font-size: 13px;
+      font-weight: 700;
       color: var(--primary);
       margin-bottom: 8px;
       display: none;
@@ -129,8 +130,8 @@
   <header>
     <div class="brand"><i class="fas fa-headphones-alt"></i> AR Tunes HD</div>
     <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="Search Sidhu Moose Wala, Arijit..." />
-      <button onclick="hackerSearch()"><i class="fas fa-search"></i></button>
+      <input type="text" id="searchInput" placeholder="Search Sidhu Moose Wala, Karan Aujla..." />
+      <button onclick="fetch100UniqueSongs()"><i class="fas fa-search"></i></button>
     </div>
   </header>
 
@@ -156,67 +157,83 @@
     let isPlaying = false;
 
     document.getElementById("searchInput").addEventListener("keypress", (e) => {
-      if (e.key === "Enter") hackerSearch();
+      if (e.key === "Enter") fetch100UniqueSongs();
     });
 
-    // JioSaavn डायरेक्ट सर्च गेटवे (बायपासिंग 5 लिमिट)
-    async function fetchJioSaavnPage(query, pageNo) {
-      const url = `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}&page=${pageNo}&limit=50`;
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-        return data?.data?.results || [];
-      } catch (err) {
-        // अल्टरनेट प्रॉक्सी एंडपॉइंट
+    async function fetchApiPage(query, page) {
+      // यह API 100% अलग-अलग गाने पेज वाइज़ देती है
+      const endpoints = [
+        `https://saavn.sumit.co/api/search/songs?query=${encodeURIComponent(query)}&page=${page}&limit=50`,
+        `https://jiosaavn-api-tau-three.vercel.app/search/songs?query=${encodeURIComponent(query)}&page=${page}&limit=50`
+      ];
+
+      for (let url of endpoints) {
         try {
-          const altUrl = `https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}&page=${pageNo}&limit=50`;
-          const altRes = await fetch(altUrl);
-          const altData = await altRes.json();
-          return altData?.data?.results || [];
-        } catch(e) {
-          return [];
-        }
+          const res = await fetch(url);
+          if (res.ok) {
+            const json = await res.json();
+            const list = json?.data?.results || json?.results || [];
+            if (list.length > 0) return list;
+          }
+        } catch(e) {}
       }
+      return [];
     }
 
-    async function hackerSearch() {
+    async function fetch100UniqueSongs() {
       const q = document.getElementById("searchInput").value.trim();
       if (!q) return;
 
       const msg = document.getElementById("statusMsg");
       const list = document.getElementById("songList");
-      const countBadge = document.getElementById("countBadge");
-      
+      const badge = document.getElementById("countBadge");
+
       msg.style.display = "block";
-      countBadge.style.display = "none";
-      msg.innerText = "⚡ Fetching 100 songs directly...";
+      badge.style.display = "none";
+      msg.innerText = "⚡ Loading 100 Unique Songs...";
       list.innerHTML = "";
 
-      // एक साथ Page 1 और Page 2 दोनों को फेच करके 100 गाने बनाना
-      const [page1Songs, page2Songs] = await Promise.all([
-        fetchJioSaavnPage(q, 1),
-        fetchJioSaavnPage(q, 2)
+      // 1. Page 1 (1-50) और Page 2 (51-100) दोनों को एक साथ फेच करें
+      const [batch1, batch2] = await Promise.all([
+        fetchApiPage(q, 1),
+        fetchApiPage(q, 2)
       ]);
 
-      const totalSongs = [...page1Songs, ...page2Songs];
+      const rawSongs = [...batch1, ...batch2];
 
-      if (totalSongs.length === 0) {
-        msg.innerText = "No songs found. Try another keyword.";
+      // 2. Hacker Deduplication Logic: ID और Name से किसी भी डुप्लीकेट गाने को फ़िल्टर करके हटाना
+      const seenIds = new Set();
+      const uniqueSongs = [];
+
+      for (let song of rawSongs) {
+        const uniqueKey = song.id || (song.name + "_" + (song.primaryArtists || song.singers || ""));
+        if (!seenIds.has(uniqueKey)) {
+          seenIds.add(uniqueKey);
+          uniqueSongs.push(song);
+        }
+      }
+
+      if (uniqueSongs.length === 0) {
+        msg.innerText = "No songs found.";
         return;
       }
 
       msg.style.display = "none";
-      countBadge.style.display = "block";
-      countBadge.innerText = `Total Songs Loaded: ${totalSongs.length}`;
+      badge.style.display = "block";
+      badge.innerText = `🔥 Total Unique Songs: ${uniqueSongs.length}`;
 
-      totalSongs.forEach((item, index) => {
-        // बेस्ट 320kbps / 160kbps लिंक निकालना
+      uniqueSongs.forEach((item, index) => {
+        // बेस्ट 320kbps ऑडियो लिंक
         let streamUrl = "";
         if (item.downloadUrl && Array.isArray(item.downloadUrl)) {
           streamUrl = item.downloadUrl[item.downloadUrl.length - 1]?.url || item.downloadUrl[0]?.url || "";
+        } else if (typeof item.downloadUrl === "string") {
+          streamUrl = item.downloadUrl;
+        } else if (item.media_url) {
+          streamUrl = item.media_url;
         }
 
-        // इमेज निकालना
+        // HD इमेज
         let img = "";
         if (item.image && Array.isArray(item.image)) {
           img = item.image[item.image.length - 1]?.url || item.image[0]?.url || "";
@@ -224,8 +241,8 @@
           img = item.image;
         }
 
-        const title = (item.name || "Track " + (index + 1)).replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-        const artist = (item.artists?.primary?.[0]?.name || item.primaryArtists || "JioSaavn").replace(/&quot;/g, '"');
+        const title = (item.name || item.song || item.title || "Track " + (index + 1)).replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+        const artist = (item.artists?.primary?.[0]?.name || item.primaryArtists || item.singers || "JioSaavn").replace(/&quot;/g, '"');
 
         const div = document.createElement("div");
         div.className = "song-item";
@@ -242,7 +259,7 @@
           if (streamUrl) {
             playAudio(streamUrl, title, artist, img);
           } else {
-            alert("Stream link not available for this track.");
+            alert("Streaming link unavailable.");
           }
         };
 
