@@ -14,7 +14,7 @@
       --text-sub: #94a3b8;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
-    body { background-color: var(--bg); color: var(--text-main); padding-bottom: 90px; }
+    body { background-color: var(--bg); color: var(--text-main); padding-bottom: 95px; }
     header {
       padding: 16px;
       position: sticky;
@@ -61,10 +61,12 @@
       border-radius: 12px;
       cursor: pointer;
       gap: 12px;
+      transition: transform 0.1s;
     }
+    .song-item:active { transform: scale(0.98); }
     .song-img {
-      width: 48px;
-      height: 48px;
+      width: 50px;
+      height: 50px;
       border-radius: 8px;
       object-fit: cover;
       background-color: #2a2e45;
@@ -97,13 +99,13 @@
       gap: 12px;
       z-index: 1000;
     }
-    .player-img { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; }
+    .player-img { width: 46px; height: 46px; border-radius: 6px; object-fit: cover; background: #222; }
     .player-info { flex: 1; overflow: hidden; }
     .player-title { font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .player-artist { font-size: 11px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .player-btn {
-      width: 42px;
-      height: 42px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
       background: var(--primary);
       border: none;
@@ -111,7 +113,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
+      font-size: 17px;
       cursor: pointer;
     }
     .status-msg { text-align: center; color: var(--text-sub); font-size: 14px; margin-top: 30px; }
@@ -163,10 +165,9 @@
       list.innerHTML = "";
 
       try {
-        // इस API रेपो में /song/?query= एंडपॉइंट इस्तेमाल होता है
-        let res = await fetch(`${API_BASE}/song/?query=${encodeURIComponent(q)}`);
+        let res = await fetch(`${API_BASE}/song/?query=${encodeURIComponent(q)}&lyrics=false&limit=30`);
         if (!res.ok) {
-          res = await fetch(`${API_BASE}/search?query=${encodeURIComponent(q)}`);
+          res = await fetch(`${API_BASE}/search?query=${encodeURIComponent(q)}&limit=30`);
         }
         const data = await res.json();
         
@@ -183,7 +184,7 @@
           songs = [data];
         }
 
-        if (!songs || songs.length === 0 || !songs[0].song && !songs[0].media_url && !songs[0].download_url) {
+        if (!songs || songs.length === 0 || (!songs[0].song && !songs[0].media_url && !songs[0].download_url)) {
           msg.innerText = "No songs found.";
           return;
         }
