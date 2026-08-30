@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AR Tunes HD</title>
+  <title>AR Tunes HD - Pro</title>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
   <style>
     :root {
@@ -50,6 +50,12 @@
       color: var(--primary);
       font-size: 16px;
       cursor: pointer;
+    }
+    .count-badge {
+      font-size: 12px;
+      color: var(--primary);
+      margin-bottom: 8px;
+      display: none;
     }
     .container { padding: 16px; }
     .song-list { display: flex; flex-direction: column; gap: 10px; }
@@ -123,12 +129,13 @@
   <header>
     <div class="brand"><i class="fas fa-headphones-alt"></i> AR Tunes HD</div>
     <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="Search Sidhu Moose Wala, Karan Aujla..." />
-      <button onclick="searchMusic()"><i class="fas fa-search"></i></button>
+      <input type="text" id="searchInput" placeholder="Search Sidhu Moose Wala, Arijit..." />
+      <button onclick="hackerSearch()"><i class="fas fa-search"></i></button>
     </div>
   </header>
 
   <div class="container">
+    <div id="countBadge" class="count-badge"></div>
     <div id="statusMsg" class="status-msg">Type a song name above to listen</div>
     <div class="song-list" id="songList"></div>
   </div>
@@ -145,105 +152,102 @@
   <audio id="audioElement"></audio>
 
   <script>
-    const MY_VERCEL_API = "https://jiosaavn-api-tau-three.vercel.app";
     const audio = document.getElementById("audioElement");
     let isPlaying = false;
 
     document.getElementById("searchInput").addEventListener("keypress", (e) => {
-      if (e.key === "Enter") searchMusic();
+      if (e.key === "Enter") hackerSearch();
     });
 
-    async function searchMusic() {
+    // JioSaavn डायरेक्ट सर्च गेटवे (बायपासिंग 5 लिमिट)
+    async function fetchJioSaavnPage(query, pageNo) {
+      const url = `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}&page=${pageNo}&limit=50`;
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        return data?.data?.results || [];
+      } catch (err) {
+        // अल्टरनेट प्रॉक्सी एंडपॉइंट
+        try {
+          const altUrl = `https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}&page=${pageNo}&limit=50`;
+          const altRes = await fetch(altUrl);
+          const altData = await altRes.json();
+          return altData?.data?.results || [];
+        } catch(e) {
+          return [];
+        }
+      }
+    }
+
+    async function hackerSearch() {
       const q = document.getElementById("searchInput").value.trim();
       if (!q) return;
 
       const msg = document.getElementById("statusMsg");
       const list = document.getElementById("songList");
+      const countBadge = document.getElementById("countBadge");
+      
       msg.style.display = "block";
-      msg.innerText = "Loading 100+ songs...";
+      countBadge.style.display = "none";
+      msg.innerText = "⚡ Fetching 100 songs directly...";
       list.innerHTML = "";
 
-      let allSongs = [];
+      // एक साथ Page 1 और Page 2 दोनों को फेच करके 100 गाने बनाना
+      const [page1Songs, page2Songs] = await Promise.all([
+        fetchJioSaavnPage(q, 1),
+        fetchJioSaavnPage(q, 2)
+      ]);
 
-      try {
-        // Page 1 और Page 2 दोनों से 50-50 गाने लाकर 100 गाने बनाना
-        const [res1, res2] = await Promise.all([
-          fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(q)}&page=1&limit=50`).then(r => r.json()).catch(() => null),
-          fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(q)}&page=2&limit=50`).then(r => r.json()).catch(() => null)
-        ]);
+      const totalSongs = [...page1Songs, ...page2Songs];
 
-        if (res1?.data?.results) allSongs.push(...res1.data.results);
-        if (res2?.data?.results) allSongs.push(...res2.data.results);
-
-        // बैकअप Fallback अगर saavn.dev व्यस्त हो
-        if (allSongs.length === 0) {
-          const fallbackRes = await fetch(`${MY_VERCEL_API}/song/?query=${encodeURIComponent(q)}`);
-          const fbData = await fallbackRes.json();
-          if (Array.isArray(fbData)) allSongs = fbData;
-        }
-
-        if (allSongs.length === 0) {
-          msg.innerText = "No songs found.";
-          return;
-        }
-
-        msg.style.display = "none";
-
-        allSongs.forEach(item => {
-          // 320kbps या बेस्ट क्वालिटी लिंक चुनना
-          let streamUrl = "";
-          if (item.downloadUrl && Array.isArray(item.downloadUrl)) {
-            streamUrl = item.downloadUrl[item.downloadUrl.length - 1]?.url || "";
-          } else if (item.media_url) {
-            streamUrl = item.media_url;
-          }
-
-          let img = "";
-          if (item.image && Array.isArray(item.image)) {
-            img = item.image[item.image.length - 1]?.url || "";
-          } else if (typeof item.image === "string") {
-            img = item.image;
-          }
-
-          const title = (item.name || item.song || item.title || "Song").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-          const artist = (item.artists?.primary?.[0]?.name || item.singers || item.primary_artists || item.artist || "Artist").replace(/&quot;/g, '"');
-
-          const div = document.createElement("div");
-          div.className = "song-item";
-
-          div.innerHTML = `
-            <img src="${img || 'https://via.placeholder.com/150'}" class="song-img" loading="lazy" />
-            <div class="song-info">
-              <div class="song-title">${title}</div>
-              <div class="song-artist">${artist}</div>
-            </div>
-            <div class="play-btn-circle"><i class="fas fa-play"></i></div>
-          `;
-
-          div.onclick = async () => {
-            let finalUrl = streamUrl;
-            // यदि डाउनलोड लिंक सीधा उपलब्ध न हो, तो Vercel API से फेच करें
-            if (!finalUrl && (item.id || item.url)) {
-              try {
-                const singleRes = await fetch(`${MY_VERCEL_API}/song/?id=${item.id || ''}&url=${encodeURIComponent(item.url || '')}`);
-                const singleData = await singleRes.json();
-                finalUrl = singleData.media_url || singleData[0]?.media_url || "";
-              } catch(e) {}
-            }
-
-            if (finalUrl) {
-              playAudio(finalUrl, title, artist, img);
-            } else {
-              alert("Playing track...");
-            }
-          };
-
-          list.appendChild(div);
-        });
-
-      } catch (err) {
-        msg.innerText = "Error loading songs. Please try again.";
+      if (totalSongs.length === 0) {
+        msg.innerText = "No songs found. Try another keyword.";
+        return;
       }
+
+      msg.style.display = "none";
+      countBadge.style.display = "block";
+      countBadge.innerText = `Total Songs Loaded: ${totalSongs.length}`;
+
+      totalSongs.forEach((item, index) => {
+        // बेस्ट 320kbps / 160kbps लिंक निकालना
+        let streamUrl = "";
+        if (item.downloadUrl && Array.isArray(item.downloadUrl)) {
+          streamUrl = item.downloadUrl[item.downloadUrl.length - 1]?.url || item.downloadUrl[0]?.url || "";
+        }
+
+        // इमेज निकालना
+        let img = "";
+        if (item.image && Array.isArray(item.image)) {
+          img = item.image[item.image.length - 1]?.url || item.image[0]?.url || "";
+        } else if (typeof item.image === "string") {
+          img = item.image;
+        }
+
+        const title = (item.name || "Track " + (index + 1)).replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+        const artist = (item.artists?.primary?.[0]?.name || item.primaryArtists || "JioSaavn").replace(/&quot;/g, '"');
+
+        const div = document.createElement("div");
+        div.className = "song-item";
+        div.innerHTML = `
+          <img src="${img || 'https://via.placeholder.com/150'}" class="song-img" loading="lazy" />
+          <div class="song-info">
+            <div class="song-title">${index + 1}. ${title}</div>
+            <div class="song-artist">${artist}</div>
+          </div>
+          <div class="play-btn-circle"><i class="fas fa-play"></i></div>
+        `;
+
+        div.onclick = () => {
+          if (streamUrl) {
+            playAudio(streamUrl, title, artist, img);
+          } else {
+            alert("Stream link not available for this track.");
+          }
+        };
+
+        list.appendChild(div);
+      });
     }
 
     function playAudio(url, title, artist, img) {
@@ -253,7 +257,7 @@
       document.getElementById("playerBar").style.display = "flex";
       document.getElementById("trackTitle").innerText = title;
       document.getElementById("trackArtist").innerText = artist;
-      document.getElementById("trackImg").src = img;
+      document.getElementById("trackImg").src = img || "";
       document.getElementById("playIcon").className = "fas fa-pause";
     }
 
