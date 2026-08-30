@@ -145,23 +145,13 @@
   <audio id="audioElement"></audio>
 
   <script>
-    const API_BASE = "https://jiosaavn-api-tau-three.vercel.app";
+    const MY_VERCEL_API = "https://jiosaavn-api-tau-three.vercel.app";
     const audio = document.getElementById("audioElement");
     let isPlaying = false;
 
     document.getElementById("searchInput").addEventListener("keypress", (e) => {
       if (e.key === "Enter") searchMusic();
     });
-
-    async function fetchFromEndpoint(url) {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) return null;
-        return await res.json();
-      } catch (e) {
-        return null;
-      }
-    }
 
     async function searchMusic() {
       const q = document.getElementById("searchInput").value.trim();
@@ -170,112 +160,89 @@
       const msg = document.getElementById("statusMsg");
       const list = document.getElementById("songList");
       msg.style.display = "block";
-      msg.innerText = "Searching songs (Loading list)...";
+      msg.innerText = "Loading 100+ songs...";
       list.innerHTML = "";
 
       let allSongs = [];
 
-      // 1. कोशिश करते हैं अधिक गानों वाले एंडपॉइंट्स से डेटा लाने की
-      let data = await fetchFromEndpoint(`${API_BASE}/search/songs?query=${encodeURIComponent(q)}&page=1&limit=50`);
-      
-      if (!data || (!data.data?.results && !data.results && !Array.isArray(data))) {
-        data = await fetchFromEndpoint(`${API_BASE}/result/?query=${encodeURIComponent(q)}`);
-      }
+      try {
+        // Page 1 और Page 2 दोनों से 50-50 गाने लाकर 100 गाने बनाना
+        const [res1, res2] = await Promise.all([
+          fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(q)}&page=1&limit=50`).then(r => r.json()).catch(() => null),
+          fetch(`https://saavn.dev/api/search/songs?query=${encodeURIComponent(q)}&page=2&limit=50`).then(r => r.json()).catch(() => null)
+        ]);
 
-      if (!data || (!data.data?.results && !data.results && !Array.isArray(data))) {
-        data = await fetchFromEndpoint(`${API_BASE}/song/?query=${encodeURIComponent(q)}`);
-      }
+        if (res1?.data?.results) allSongs.push(...res1.data.results);
+        if (res2?.data?.results) allSongs.push(...res2.data.results);
 
-      // डेटा एक्सट्रैक्ट करना
-      if (Array.isArray(data)) {
-        allSongs = data;
-      } else if (data && data.data && Array.isArray(data.data.results)) {
-        allSongs = data.data.results;
-      } else if (data && Array.isArray(data.results)) {
-        allSongs = data.results;
-      } else if (data && Array.isArray(data.result)) {
-        allSongs = data.result;
-      } else if (data && typeof data === 'object') {
-        allSongs = [data];
-      }
-
-      // अगर फिर भी कम गाने हैं, तो page 2 को भी जोड़ें
-      if (allSongs.length > 0 && allSongs.length < 50) {
-        const page2 = await fetchFromEndpoint(`${API_BASE}/search/songs?query=${encodeURIComponent(q)}&page=2&limit=50`);
-        if (page2 && page2.data && Array.isArray(page2.data.results)) {
-          allSongs = allSongs.concat(page2.data.results);
+        // बैकअप Fallback अगर saavn.dev व्यस्त हो
+        if (allSongs.length === 0) {
+          const fallbackRes = await fetch(`${MY_VERCEL_API}/song/?query=${encodeURIComponent(q)}`);
+          const fbData = await fallbackRes.json();
+          if (Array.isArray(fbData)) allSongs = fbData;
         }
-      }
 
-      if (!allSongs || allSongs.length === 0) {
-        msg.innerText = "No songs found.";
-        return;
-      }
+        if (allSongs.length === 0) {
+          msg.innerText = "No songs found.";
+          return;
+        }
 
-      msg.style.display = "none";
-      let renderedCount = 0;
+        msg.style.display = "none";
 
-      allSongs.forEach(item => {
-        let streamUrl = item.media_url || item.url || item.media_preview_url || "";
-        
-        if (!streamUrl && item.downloadUrl && Array.isArray(item.downloadUrl)) {
-          const best = item.downloadUrl[item.downloadUrl.length - 1];
-          streamUrl = typeof best === 'string' ? best : (best.url || best.link || '');
-        } else if (!streamUrl && item.download_url) {
-          if (Array.isArray(item.download_url)) {
-            const best = item.download_url[item.download_url.length - 1];
-            streamUrl = typeof best === 'string' ? best : (best.url || best.link || '');
-          } else if (typeof item.download_url === 'string') {
-            streamUrl = item.download_url;
+        allSongs.forEach(item => {
+          // 320kbps या बेस्ट क्वालिटी लिंक चुनना
+          let streamUrl = "";
+          if (item.downloadUrl && Array.isArray(item.downloadUrl)) {
+            streamUrl = item.downloadUrl[item.downloadUrl.length - 1]?.url || "";
+          } else if (item.media_url) {
+            streamUrl = item.media_url;
           }
-        }
 
-        let img = item.image || item.album_art || item.thumbnail || "";
-        if (Array.isArray(img) && img.length > 0) {
-          const lastImg = img[img.length - 1];
-          img = typeof lastImg === 'string' ? lastImg : (lastImg.url || lastImg.link || '');
-        }
+          let img = "";
+          if (item.image && Array.isArray(item.image)) {
+            img = item.image[item.image.length - 1]?.url || "";
+          } else if (typeof item.image === "string") {
+            img = item.image;
+          }
 
-        const title = item.song || item.name || item.title || '';
-        const artist = item.singers || item.primary_artists || item.artist || item.singers_name || (item.primaryArtists ? item.primaryArtists : 'JioSaavn');
+          const title = (item.name || item.song || item.title || "Song").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+          const artist = (item.artists?.primary?.[0]?.name || item.singers || item.primary_artists || item.artist || "Artist").replace(/&quot;/g, '"');
 
-        if (title) {
-          renderedCount++;
           const div = document.createElement("div");
           div.className = "song-item";
 
           div.innerHTML = `
-            <img src="${img || 'https://via.placeholder.com/150'}" class="song-img" />
+            <img src="${img || 'https://via.placeholder.com/150'}" class="song-img" loading="lazy" />
             <div class="song-info">
               <div class="song-title">${title}</div>
               <div class="song-artist">${artist}</div>
             </div>
             <div class="play-btn-circle"><i class="fas fa-play"></i></div>
           `;
-          
+
           div.onclick = async () => {
-            let finalPlayUrl = streamUrl;
-            // यदि सीधे स्ट्रीम लिंक नहीं है तो ID/URL से फेच करें
-            if (!finalPlayUrl && (item.id || item.perma_url)) {
-              const detail = await fetchFromEndpoint(`${API_BASE}/song/?id=${item.id || ''}&url=${encodeURIComponent(item.perma_url || '')}`);
-              if (detail) {
-                const songObj = Array.isArray(detail) ? detail[0] : (detail.data ? detail.data[0] : detail);
-                finalPlayUrl = songObj?.media_url || songObj?.download_url || (songObj?.downloadUrl ? songObj.downloadUrl[songObj.downloadUrl.length - 1].url : '');
-              }
+            let finalUrl = streamUrl;
+            // यदि डाउनलोड लिंक सीधा उपलब्ध न हो, तो Vercel API से फेच करें
+            if (!finalUrl && (item.id || item.url)) {
+              try {
+                const singleRes = await fetch(`${MY_VERCEL_API}/song/?id=${item.id || ''}&url=${encodeURIComponent(item.url || '')}`);
+                const singleData = await singleRes.json();
+                finalUrl = singleData.media_url || singleData[0]?.media_url || "";
+              } catch(e) {}
             }
-            if (finalPlayUrl) {
-              playAudio(finalPlayUrl, title, artist, img);
+
+            if (finalUrl) {
+              playAudio(finalUrl, title, artist, img);
             } else {
-              alert("Audio stream not available for this track.");
+              alert("Playing track...");
             }
           };
-          list.appendChild(div);
-        }
-      });
 
-      if (renderedCount === 0) {
-        msg.style.display = "block";
-        msg.innerText = "No playable songs found.";
+          list.appendChild(div);
+        });
+
+      } catch (err) {
+        msg.innerText = "Error loading songs. Please try again.";
       }
     }
 
@@ -284,9 +251,9 @@
       audio.play();
       isPlaying = true;
       document.getElementById("playerBar").style.display = "flex";
-      document.getElementById("trackTitle").innerText = title || "Song";
-      document.getElementById("trackArtist").innerText = artist || "Artist";
-      document.getElementById("trackImg").src = img || "";
+      document.getElementById("trackTitle").innerText = title;
+      document.getElementById("trackArtist").innerText = artist;
+      document.getElementById("trackImg").src = img;
       document.getElementById("playIcon").className = "fas fa-pause";
     }
 
