@@ -150,7 +150,7 @@
     <button class="player-btn" onclick="togglePlay()"><i id="playIcon" class="fas fa-play"></i></button>
   </div>
 
-  <audio id="audioElement"></audio>
+  <audio id="audioElement" preload="auto"></audio>
 
   <script>
     const audio = document.getElementById("audioElement");
@@ -160,38 +160,48 @@
       if (e.key === "Enter") startSearch();
     });
 
-    // 4 अलग-अलग हाई-स्पीड JioSaavn प्रोडक्शन क्लस्टर एंडपॉइंट्स (No-CORS Blocks)
     const API_SERVERS = [
       "https://saavn.dev/api",
       "https://saavn.me",
-      "https://jiosaavn-api-privatecvc2.vercel.app",
-      "https://jiosaavn-api-tau-three.vercel.app"
+      "https://jiosaavn-api-privatecvc2.vercel.app"
     ];
 
-    async function queryMirror(endpoint, query, page) {
+    async function queryMirror(query, page) {
       for (const base of API_SERVERS) {
         try {
-          let url = "";
-          if (base.includes("/api")) {
-            url = `${base}/search/songs?query=${encodeURIComponent(query)}&page=${page}&limit=50`;
-          } else if (base.includes("tau-three")) {
-            url = `${base}/song/?query=${encodeURIComponent(query)}`;
-          } else {
-            url = `${base}/search/songs?query=${encodeURIComponent(query)}&page=${page}&limit=50`;
-          }
-
+          const url = `${base}/search/songs?query=${encodeURIComponent(query)}&page=${page}&limit=50`;
           const res = await fetch(url);
           if (res.ok) {
             const data = await res.json();
-            const results = data?.data?.results || data?.results || (Array.isArray(data) ? data : (data.result ? data.result : []));
+            const results = data?.data?.results || data?.results || [];
             if (results && results.length > 0) return results;
           }
-        } catch (err) {
-          // अगले मिरर पर स्विच करें
-          continue;
-        }
+        } catch (err) {}
       }
       return [];
+    }
+
+    // डायरेक्ट प्ले करने योग्य URL निकालना
+    function extractStreamUrl(item) {
+      // 1. Check downloadUrl / download_url array (Highest Quality)
+      const list = item.downloadUrl || item.download_url;
+      if (Array.isArray(list) && list.length > 0) {
+        // 320kbps या 160kbps लिंक
+        for (let i = list.length - 1; i >= 0; i--) {
+          const u = typeof list[i] === 'string' ? list[i] : (list[i].url || list[i].link);
+          if (u && (u.startsWith("http://") || u.startsWith("https://"))) {
+            return u.replace("http://", "https://");
+          }
+        }
+      }
+
+      // 2. Check direct media URL string
+      let direct = item.media_url || item.url || item.media_preview_url || "";
+      if (direct && typeof direct === 'string' && direct.startsWith("http")) {
+        return direct.replace("http://", "https://");
+      }
+
+      return "";
     }
 
     async function startSearch() {
@@ -204,18 +214,16 @@
 
       msg.style.display = "block";
       badge.style.display = "none";
-      msg.innerText = "⚡ Loading full catalog...";
+      msg.innerText = "⚡ Loading 100 songs...";
       list.innerHTML = "";
 
-      // Page 1 और Page 2 दोनों को पैरेलल फेच करके 100 गाने बनाना
-      const [resPage1, resPage2] = await Promise.all([
-        queryMirror(API_SERVERS, q, 1),
-        queryMirror(API_SERVERS, q, 2)
+      const [p1, p2] = await Promise.all([
+        queryMirror(q, 1),
+        queryMirror(q, 2)
       ]);
 
-      let rawSongs = [...resPage1, ...resPage2];
+      let rawSongs = [...p1, ...p2];
 
-      // Deduplication: डुप्लीकेट गानों को फ़िल्टर करना
       const uniqueMap = new Map();
       rawSongs.forEach(song => {
         const title = (song.name || song.song || song.title || "").trim().toLowerCase();
@@ -237,35 +245,22 @@
       badge.innerText = `🔥 Total Songs Loaded: ${uniqueSongs.length}`;
 
       uniqueSongs.forEach((item, index) => {
-        // बेस्ट 320kbps / डायरेक्ट CDN लिंक एक्सट्रैक्टर
-        let streamUrl = "";
-        if (item.downloadUrl && Array.isArray(item.downloadUrl)) {
-          streamUrl = item.downloadUrl[item.downloadUrl.length - 1]?.url || item.downloadUrl[0]?.url || "";
-        } else if (typeof item.downloadUrl === "string") {
-          streamUrl = item.downloadUrl;
-        } else if (item.media_url) {
-          streamUrl = item.media_url;
-        }
+        let streamUrl = extractStreamUrl(item);
 
-        // HD इमेज एक्सट्रैक्टर
         let img = "";
-        if (item.image && Array.isArray(item.image)) {
-          img = item.image[item.image.length - 1]?.url || item.image[0]?.url || "";
-        } else if (typeof item.image === "string") {
-          img = item.image;
-        } else if (item.album_art) {
-          img = item.album_art;
+        const imgArr = item.image || item.album_art;
+        if (Array.isArray(imgArr) && imgArr.length > 0) {
+          const last = imgArr[imgArr.length - 1];
+          img = typeof last === 'string' ? last : (last.url || last.link);
+        } else if (typeof imgArr === "string") {
+          img = imgArr;
         }
 
         const title = (item.name || item.song || item.title || `Track ${index + 1}`)
-          .replace(/&quot;/g, '"')
-          .replace(/&amp;/g, '&')
-          .replace(/&#039;/g, "'");
+          .replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'");
 
         const artist = (item.artists?.primary?.[0]?.name || item.primaryArtists || item.singers || item.artist || "JioSaavn")
-          .replace(/&quot;/g, '"')
-          .replace(/&amp;/g, '&')
-          .replace(/&#039;/g, "'");
+          .replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'");
 
         const div = document.createElement("div");
         div.className = "song-item";
@@ -278,11 +273,26 @@
           <div class="play-btn-circle"><i class="fas fa-play"></i></div>
         `;
 
-        div.onclick = () => {
+        div.onclick = async () => {
+          // अगर लिस्ट में लिंक नहीं मिला, तो सीधे ID से 1-क्लिक में लाइव लिंक फेच करें
+          if (!streamUrl && item.id) {
+            msg.style.display = "block";
+            msg.innerText = "Loading audio stream...";
+            try {
+              const res = await fetch(`https://saavn.dev/api/songs?id=${item.id}`);
+              const d = await res.json();
+              const songObj = d?.data?.[0] || d?.data || d?.[0];
+              if (songObj) {
+                streamUrl = extractStreamUrl(songObj);
+              }
+            } catch(e) {}
+            msg.style.display = "none";
+          }
+
           if (streamUrl) {
             playAudio(streamUrl, title, artist, img);
           } else {
-            alert("Stream not available for this song.");
+            alert("Streaming link unavailable for this track.");
           }
         };
 
@@ -291,14 +301,32 @@
     }
 
     function playAudio(url, title, artist, img) {
+      audio.pause();
       audio.src = url;
-      audio.play();
-      isPlaying = true;
+      audio.load();
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            isPlaying = true;
+            document.getElementById("playIcon").className = "fas fa-pause";
+          })
+          .catch(err => {
+            // ऑटोप्ले ब्लॉक या फ़ॉर्मैट इश्यू होने पर बैकअप 160kbps लिंक ट्राई करें
+            if (url.includes("_320.mp4")) {
+              audio.src = url.replace("_320.mp4", "_160.mp4");
+              audio.play();
+              isPlaying = true;
+              document.getElementById("playIcon").className = "fas fa-pause";
+            }
+          });
+      }
+
       document.getElementById("playerBar").style.display = "flex";
       document.getElementById("trackTitle").innerText = title;
       document.getElementById("trackArtist").innerText = artist;
       document.getElementById("trackImg").src = img || "";
-      document.getElementById("playIcon").className = "fas fa-pause";
     }
 
     function togglePlay() {
@@ -315,6 +343,11 @@
     audio.onended = () => {
       isPlaying = false;
       document.getElementById("playIcon").className = "fas fa-play";
+    };
+
+    audio.onerror = () => {
+      document.getElementById("playIcon").className = "fas fa-play";
+      isPlaying = false;
     };
   </script>
 </body>
