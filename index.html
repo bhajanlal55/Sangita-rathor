@@ -61,7 +61,6 @@
       border-radius: 12px;
       cursor: pointer;
       gap: 12px;
-      transition: transform 0.1s;
     }
     .song-item:active { transform: scale(0.98); }
     .song-img {
@@ -154,6 +153,16 @@
       if (e.key === "Enter") searchMusic();
     });
 
+    async function fetchFromEndpoint(url) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        return await res.json();
+      } catch (e) {
+        return null;
+      }
+    }
+
     async function searchMusic() {
       const q = document.getElementById("searchInput").value.trim();
       if (!q) return;
@@ -161,74 +170,112 @@
       const msg = document.getElementById("statusMsg");
       const list = document.getElementById("songList");
       msg.style.display = "block";
-      msg.innerText = "Searching songs...";
+      msg.innerText = "Searching songs (Loading list)...";
       list.innerHTML = "";
 
-      try {
-        let res = await fetch(`${API_BASE}/song/?query=${encodeURIComponent(q)}&lyrics=false&limit=30`);
-        if (!res.ok) {
-          res = await fetch(`${API_BASE}/search?query=${encodeURIComponent(q)}&limit=30`);
+      let allSongs = [];
+
+      // 1. कोशिश करते हैं अधिक गानों वाले एंडपॉइंट्स से डेटा लाने की
+      let data = await fetchFromEndpoint(`${API_BASE}/search/songs?query=${encodeURIComponent(q)}&page=1&limit=50`);
+      
+      if (!data || (!data.data?.results && !data.results && !Array.isArray(data))) {
+        data = await fetchFromEndpoint(`${API_BASE}/result/?query=${encodeURIComponent(q)}`);
+      }
+
+      if (!data || (!data.data?.results && !data.results && !Array.isArray(data))) {
+        data = await fetchFromEndpoint(`${API_BASE}/song/?query=${encodeURIComponent(q)}`);
+      }
+
+      // डेटा एक्सट्रैक्ट करना
+      if (Array.isArray(data)) {
+        allSongs = data;
+      } else if (data && data.data && Array.isArray(data.data.results)) {
+        allSongs = data.data.results;
+      } else if (data && Array.isArray(data.results)) {
+        allSongs = data.results;
+      } else if (data && Array.isArray(data.result)) {
+        allSongs = data.result;
+      } else if (data && typeof data === 'object') {
+        allSongs = [data];
+      }
+
+      // अगर फिर भी कम गाने हैं, तो page 2 को भी जोड़ें
+      if (allSongs.length > 0 && allSongs.length < 50) {
+        const page2 = await fetchFromEndpoint(`${API_BASE}/search/songs?query=${encodeURIComponent(q)}&page=2&limit=50`);
+        if (page2 && page2.data && Array.isArray(page2.data.results)) {
+          allSongs = allSongs.concat(page2.data.results);
         }
-        const data = await res.json();
+      }
+
+      if (!allSongs || allSongs.length === 0) {
+        msg.innerText = "No songs found.";
+        return;
+      }
+
+      msg.style.display = "none";
+      let renderedCount = 0;
+
+      allSongs.forEach(item => {
+        let streamUrl = item.media_url || item.url || item.media_preview_url || "";
         
-        let songs = [];
-        if (Array.isArray(data)) {
-          songs = data;
-        } else if (data.result && Array.isArray(data.result)) {
-          songs = data.result;
-        } else if (data.results && Array.isArray(data.results)) {
-          songs = data.results;
-        } else if (data.data && Array.isArray(data.data.results)) {
-          songs = data.data.results;
-        } else if (typeof data === 'object' && data !== null) {
-          songs = [data];
+        if (!streamUrl && item.downloadUrl && Array.isArray(item.downloadUrl)) {
+          const best = item.downloadUrl[item.downloadUrl.length - 1];
+          streamUrl = typeof best === 'string' ? best : (best.url || best.link || '');
+        } else if (!streamUrl && item.download_url) {
+          if (Array.isArray(item.download_url)) {
+            const best = item.download_url[item.download_url.length - 1];
+            streamUrl = typeof best === 'string' ? best : (best.url || best.link || '');
+          } else if (typeof item.download_url === 'string') {
+            streamUrl = item.download_url;
+          }
         }
 
-        if (!songs || songs.length === 0 || (!songs[0].song && !songs[0].media_url && !songs[0].download_url)) {
-          msg.innerText = "No songs found.";
-          return;
+        let img = item.image || item.album_art || item.thumbnail || "";
+        if (Array.isArray(img) && img.length > 0) {
+          const lastImg = img[img.length - 1];
+          img = typeof lastImg === 'string' ? lastImg : (lastImg.url || lastImg.link || '');
         }
 
-        msg.style.display = "none";
-        songs.forEach(item => {
-          let streamUrl = item.media_url || item.url || item.media_preview_url || "";
+        const title = item.song || item.name || item.title || '';
+        const artist = item.singers || item.primary_artists || item.artist || item.singers_name || (item.primaryArtists ? item.primaryArtists : 'JioSaavn');
+
+        if (title) {
+          renderedCount++;
+          const div = document.createElement("div");
+          div.className = "song-item";
+
+          div.innerHTML = `
+            <img src="${img || 'https://via.placeholder.com/150'}" class="song-img" />
+            <div class="song-info">
+              <div class="song-title">${title}</div>
+              <div class="song-artist">${artist}</div>
+            </div>
+            <div class="play-btn-circle"><i class="fas fa-play"></i></div>
+          `;
           
-          if (!streamUrl && item.download_url) {
-            if (Array.isArray(item.download_url)) {
-              const best = item.download_url[item.download_url.length - 1];
-              streamUrl = typeof best === 'string' ? best : (best.url || best.link || '');
-            } else if (typeof item.download_url === 'string') {
-              streamUrl = item.download_url;
+          div.onclick = async () => {
+            let finalPlayUrl = streamUrl;
+            // यदि सीधे स्ट्रीम लिंक नहीं है तो ID/URL से फेच करें
+            if (!finalPlayUrl && (item.id || item.perma_url)) {
+              const detail = await fetchFromEndpoint(`${API_BASE}/song/?id=${item.id || ''}&url=${encodeURIComponent(item.perma_url || '')}`);
+              if (detail) {
+                const songObj = Array.isArray(detail) ? detail[0] : (detail.data ? detail.data[0] : detail);
+                finalPlayUrl = songObj?.media_url || songObj?.download_url || (songObj?.downloadUrl ? songObj.downloadUrl[songObj.downloadUrl.length - 1].url : '');
+              }
             }
-          }
-
-          if (streamUrl) {
-            const div = document.createElement("div");
-            div.className = "song-item";
-            
-            let img = item.image || item.album_art || item.thumbnail || "";
-            if (Array.isArray(img) && img.length > 0) {
-              const lastImg = img[img.length - 1];
-              img = typeof lastImg === 'string' ? lastImg : (lastImg.url || lastImg.link || '');
+            if (finalPlayUrl) {
+              playAudio(finalPlayUrl, title, artist, img);
+            } else {
+              alert("Audio stream not available for this track.");
             }
-            
-            const title = item.song || item.name || item.title || 'Unknown Song';
-            const artist = item.singers || item.primary_artists || item.artist || item.singers_name || 'JioSaavn';
+          };
+          list.appendChild(div);
+        }
+      });
 
-            div.innerHTML = `
-              <img src="${img || 'https://via.placeholder.com/150'}" class="song-img" />
-              <div class="song-info">
-                <div class="song-title">${title}</div>
-                <div class="song-artist">${artist}</div>
-              </div>
-              <div class="play-btn-circle"><i class="fas fa-play"></i></div>
-            `;
-            div.onclick = () => playAudio(streamUrl, title, artist, img);
-            list.appendChild(div);
-          }
-        });
-      } catch (err) {
-        msg.innerText = "Error loading songs. Please try again.";
+      if (renderedCount === 0) {
+        msg.style.display = "block";
+        msg.innerText = "No playable songs found.";
       }
     }
 
