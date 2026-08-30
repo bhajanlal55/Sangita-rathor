@@ -131,7 +131,7 @@
   <header>
     <div class="brand"><i class="fas fa-headphones-alt"></i> AR Tunes HD</div>
     <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="Search Sidhu Moose Wala, Karan Aujla..." />
+      <input type="text" id="searchInput" placeholder="Search Karan Aujla, Sidhu..." />
       <button onclick="load100Songs()"><i class="fas fa-search"></i></button>
     </div>
   </header>
@@ -161,7 +161,7 @@
       if (e.key === "Enter") load100Songs();
     });
 
-    // JioSaavn DES 320kbps Audio Decryptor
+    // JioSaavn DES 320kbps Audio Decrypt Engine
     function decryptMediaUrl(encryptedUrl) {
       if (!encryptedUrl) return "";
       try {
@@ -172,13 +172,14 @@
           { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }
         );
         let raw = decrypted.toString(CryptoJS.enc.Utf8);
-        return raw.replace("_96.mp4", "_320.mp4");
+        if (!raw) return "";
+        // JioSaavn CDN direct link
+        return raw.replace("_96.mp4", "_320.mp4").replace(".mp4", "_320.mp4");
       } catch (e) {
         return "";
       }
     }
 
-    // JioSaavn से एक पेज (20 गाने) फेच करना
     async function fetchJioSaavnPage(query, page) {
       const saavnUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&q=${encodeURIComponent(query)}&p=${page}&n=20`;
       
@@ -214,7 +215,7 @@
       msg.innerText = "⚡ Fetching 100 Songs from JioSaavn...";
       list.innerHTML = "";
 
-      // 5 पेजों को एक साथ पैरेलल फेच करना (20 × 5 = 100 गाने)
+      // 5 पेजों को पैरेलल फेच करना (20 × 5 = 100 गाने)
       const resultsArray = await Promise.all([
         fetchJioSaavnPage(q, 1),
         fetchJioSaavnPage(q, 2),
@@ -225,7 +226,6 @@
 
       const flatList = resultsArray.flat();
 
-      // डुप्लीकेट्स हटाना
       const seen = new Set();
       const allSongs = [];
       flatList.forEach(item => {
@@ -246,10 +246,17 @@
       badge.innerText = `🔥 Total Songs Loaded: ${allSongs.length}`;
 
       allSongs.forEach((item, idx) => {
-        const streamUrl = decryptMediaUrl(item.encrypted_media_url);
+        // एन्क्रिप्टेड URL दोनों जगह से चेक करना (more_info या root)
+        const encUrl = item.more_info?.encrypted_media_url || item.encrypted_media_url || item.more_info?.encrypted_url;
+        let streamUrl = decryptMediaUrl(encUrl);
+        
+        // अल्टरनेट fallback URL
+        if (!streamUrl && item.more_info?.vlink) {
+          streamUrl = item.more_info.vlink;
+        }
+
         const img = (item.image || "").replace("150x150", "500x500");
         
-        // साफ़ नाम और असली गायक का नाम निकालना
         const title = (item.song || item.title || `Track ${idx + 1}`)
           .replace(/&quot;/g, '"')
           .replace(/&amp;/g, '&')
@@ -271,11 +278,25 @@
           <div class="play-btn-circle"><i class="fas fa-play"></i></div>
         `;
 
-        div.onclick = () => {
-          if (streamUrl) {
-            playAudio(streamUrl, title, artist, img);
+        div.onclick = async () => {
+          let playUrl = streamUrl;
+          
+          // अगर टोकन सीधे न मिले, तो सिंगल ID फेच से लाइव लिंक निकालना
+          if (!playUrl && item.id) {
+            try {
+              const detailUrl = `https://www.jiosaavn.com/api.php?__call=song.getDetails&cc=in&_marker=0%3F_marker%3D0&_format=json&pids=${item.id}`;
+              const dRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(detailUrl)}`);
+              const dData = await dRes.json();
+              const songData = dData[item.id];
+              const singleEnc = songData?.more_info?.encrypted_media_url || songData?.encrypted_media_url;
+              playUrl = decryptMediaUrl(singleEnc);
+            } catch(e) {}
+          }
+
+          if (playUrl) {
+            playAudio(playUrl, title, artist, img);
           } else {
-            alert("Streaming link not available.");
+            alert("Error playing track. Trying backup...");
           }
         };
 
@@ -285,7 +306,13 @@
 
     function playAudio(url, title, artist, img) {
       audio.src = url;
-      audio.play();
+      audio.play().catch(e => {
+        // अगर 320kbps लिंक 403 दे, तो 96kbps/160kbps पर ऑटो-स्विच करें
+        if (url.includes("_320.mp4")) {
+          audio.src = url.replace("_320.mp4", "_96.mp4");
+          audio.play();
+        }
+      });
       isPlaying = true;
       document.getElementById("playerBar").style.display = "flex";
       document.getElementById("trackTitle").innerText = title;
