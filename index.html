@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AR Tunes HD 100X</title>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
   <style>
     :root {
       --primary: #00d26a;
@@ -131,8 +130,8 @@
   <header>
     <div class="brand"><i class="fas fa-headphones-alt"></i> AR Tunes HD</div>
     <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="Search Karan Aujla, Sidhu..." />
-      <button onclick="load100Songs()"><i class="fas fa-search"></i></button>
+      <input type="text" id="searchInput" placeholder="Search Sidhu Moose Wala, Karan Aujla..." />
+      <button onclick="startSearch()"><i class="fas fa-search"></i></button>
     </div>
   </header>
 
@@ -158,51 +157,44 @@
     let isPlaying = false;
 
     document.getElementById("searchInput").addEventListener("keypress", (e) => {
-      if (e.key === "Enter") load100Songs();
+      if (e.key === "Enter") startSearch();
     });
 
-    // JioSaavn DES 320kbps Audio Decrypt Engine
-    function decryptMediaUrl(encryptedUrl) {
-      if (!encryptedUrl) return "";
-      try {
-        const key = CryptoJS.enc.Utf8.parse("38346591");
-        const decrypted = CryptoJS.DES.decrypt(
-          { ciphertext: CryptoJS.enc.Base64.parse(encryptedUrl) },
-          key,
-          { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }
-        );
-        let raw = decrypted.toString(CryptoJS.enc.Utf8);
-        if (!raw) return "";
-        // JioSaavn CDN direct link
-        return raw.replace("_96.mp4", "_320.mp4").replace(".mp4", "_320.mp4");
-      } catch (e) {
-        return "";
-      }
-    }
+    // 4 अलग-अलग हाई-स्पीड JioSaavn प्रोडक्शन क्लस्टर एंडपॉइंट्स (No-CORS Blocks)
+    const API_SERVERS = [
+      "https://saavn.dev/api",
+      "https://saavn.me",
+      "https://jiosaavn-api-privatecvc2.vercel.app",
+      "https://jiosaavn-api-tau-three.vercel.app"
+    ];
 
-    async function fetchJioSaavnPage(query, page) {
-      const saavnUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&q=${encodeURIComponent(query)}&p=${page}&n=20`;
-      
-      const proxies = [
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(saavnUrl)}`,
-        `https://corsproxy.io/?url=${encodeURIComponent(saavnUrl)}`
-      ];
-
-      for (let proxy of proxies) {
+    async function queryMirror(endpoint, query, page) {
+      for (const base of API_SERVERS) {
         try {
-          const res = await fetch(proxy);
+          let url = "";
+          if (base.includes("/api")) {
+            url = `${base}/search/songs?query=${encodeURIComponent(query)}&page=${page}&limit=50`;
+          } else if (base.includes("tau-three")) {
+            url = `${base}/song/?query=${encodeURIComponent(query)}`;
+          } else {
+            url = `${base}/search/songs?query=${encodeURIComponent(query)}&page=${page}&limit=50`;
+          }
+
+          const res = await fetch(url);
           if (res.ok) {
             const data = await res.json();
-            if (data && data.results && data.results.length > 0) {
-              return data.results;
-            }
+            const results = data?.data?.results || data?.results || (Array.isArray(data) ? data : (data.result ? data.result : []));
+            if (results && results.length > 0) return results;
           }
-        } catch (e) {}
+        } catch (err) {
+          // अगले मिरर पर स्विच करें
+          continue;
+        }
       }
       return [];
     }
 
-    async function load100Songs() {
+    async function startSearch() {
       const q = document.getElementById("searchInput").value.trim();
       if (!q) return;
 
@@ -212,57 +204,65 @@
 
       msg.style.display = "block";
       badge.style.display = "none";
-      msg.innerText = "⚡ Fetching 100 Songs from JioSaavn...";
+      msg.innerText = "⚡ Loading full catalog...";
       list.innerHTML = "";
 
-      // 5 पेजों को पैरेलल फेच करना (20 × 5 = 100 गाने)
-      const resultsArray = await Promise.all([
-        fetchJioSaavnPage(q, 1),
-        fetchJioSaavnPage(q, 2),
-        fetchJioSaavnPage(q, 3),
-        fetchJioSaavnPage(q, 4),
-        fetchJioSaavnPage(q, 5)
+      // Page 1 और Page 2 दोनों को पैरेलल फेच करके 100 गाने बनाना
+      const [resPage1, resPage2] = await Promise.all([
+        queryMirror(API_SERVERS, q, 1),
+        queryMirror(API_SERVERS, q, 2)
       ]);
 
-      const flatList = resultsArray.flat();
+      let rawSongs = [...resPage1, ...resPage2];
 
-      const seen = new Set();
-      const allSongs = [];
-      flatList.forEach(item => {
-        const id = item.id || item.song;
-        if (id && !seen.has(id)) {
-          seen.add(id);
-          allSongs.push(item);
+      // Deduplication: डुप्लीकेट गानों को फ़िल्टर करना
+      const uniqueMap = new Map();
+      rawSongs.forEach(song => {
+        const title = (song.name || song.song || song.title || "").trim().toLowerCase();
+        const id = song.id || title;
+        if (title && !uniqueMap.has(id)) {
+          uniqueMap.set(id, song);
         }
       });
 
-      if (allSongs.length === 0) {
-        msg.innerText = "No songs found. Try another keyword.";
+      const uniqueSongs = Array.from(uniqueMap.values());
+
+      if (uniqueSongs.length === 0) {
+        msg.innerText = "No songs found. Please try another search.";
         return;
       }
 
       msg.style.display = "none";
       badge.style.display = "block";
-      badge.innerText = `🔥 Total Songs Loaded: ${allSongs.length}`;
+      badge.innerText = `🔥 Total Songs Loaded: ${uniqueSongs.length}`;
 
-      allSongs.forEach((item, idx) => {
-        // एन्क्रिप्टेड URL दोनों जगह से चेक करना (more_info या root)
-        const encUrl = item.more_info?.encrypted_media_url || item.encrypted_media_url || item.more_info?.encrypted_url;
-        let streamUrl = decryptMediaUrl(encUrl);
-        
-        // अल्टरनेट fallback URL
-        if (!streamUrl && item.more_info?.vlink) {
-          streamUrl = item.more_info.vlink;
+      uniqueSongs.forEach((item, index) => {
+        // बेस्ट 320kbps / डायरेक्ट CDN लिंक एक्सट्रैक्टर
+        let streamUrl = "";
+        if (item.downloadUrl && Array.isArray(item.downloadUrl)) {
+          streamUrl = item.downloadUrl[item.downloadUrl.length - 1]?.url || item.downloadUrl[0]?.url || "";
+        } else if (typeof item.downloadUrl === "string") {
+          streamUrl = item.downloadUrl;
+        } else if (item.media_url) {
+          streamUrl = item.media_url;
         }
 
-        const img = (item.image || "").replace("150x150", "500x500");
-        
-        const title = (item.song || item.title || `Track ${idx + 1}`)
+        // HD इमेज एक्सट्रैक्टर
+        let img = "";
+        if (item.image && Array.isArray(item.image)) {
+          img = item.image[item.image.length - 1]?.url || item.image[0]?.url || "";
+        } else if (typeof item.image === "string") {
+          img = item.image;
+        } else if (item.album_art) {
+          img = item.album_art;
+        }
+
+        const title = (item.name || item.song || item.title || `Track ${index + 1}`)
           .replace(/&quot;/g, '"')
           .replace(/&amp;/g, '&')
           .replace(/&#039;/g, "'");
 
-        const artist = (item.more_info?.singers || item.more_info?.primary_artists || item.singers || item.primary_artists || item.subtitle || "JioSaavn")
+        const artist = (item.artists?.primary?.[0]?.name || item.primaryArtists || item.singers || item.artist || "JioSaavn")
           .replace(/&quot;/g, '"')
           .replace(/&amp;/g, '&')
           .replace(/&#039;/g, "'");
@@ -272,31 +272,17 @@
         div.innerHTML = `
           <img src="${img || 'https://via.placeholder.com/150'}" class="song-img" loading="lazy" />
           <div class="song-info">
-            <div class="song-title">${idx + 1}. ${title}</div>
+            <div class="song-title">${index + 1}. ${title}</div>
             <div class="song-artist">${artist}</div>
           </div>
           <div class="play-btn-circle"><i class="fas fa-play"></i></div>
         `;
 
-        div.onclick = async () => {
-          let playUrl = streamUrl;
-          
-          // अगर टोकन सीधे न मिले, तो सिंगल ID फेच से लाइव लिंक निकालना
-          if (!playUrl && item.id) {
-            try {
-              const detailUrl = `https://www.jiosaavn.com/api.php?__call=song.getDetails&cc=in&_marker=0%3F_marker%3D0&_format=json&pids=${item.id}`;
-              const dRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(detailUrl)}`);
-              const dData = await dRes.json();
-              const songData = dData[item.id];
-              const singleEnc = songData?.more_info?.encrypted_media_url || songData?.encrypted_media_url;
-              playUrl = decryptMediaUrl(singleEnc);
-            } catch(e) {}
-          }
-
-          if (playUrl) {
-            playAudio(playUrl, title, artist, img);
+        div.onclick = () => {
+          if (streamUrl) {
+            playAudio(streamUrl, title, artist, img);
           } else {
-            alert("Error playing track. Trying backup...");
+            alert("Stream not available for this song.");
           }
         };
 
@@ -306,13 +292,7 @@
 
     function playAudio(url, title, artist, img) {
       audio.src = url;
-      audio.play().catch(e => {
-        // अगर 320kbps लिंक 403 दे, तो 96kbps/160kbps पर ऑटो-स्विच करें
-        if (url.includes("_320.mp4")) {
-          audio.src = url.replace("_320.mp4", "_96.mp4");
-          audio.play();
-        }
-      });
+      audio.play();
       isPlaying = true;
       document.getElementById("playerBar").style.display = "flex";
       document.getElementById("trackTitle").innerText = title;
